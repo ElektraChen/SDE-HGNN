@@ -4,7 +4,7 @@
 
 This repository provides the implementation for the paper *SDE-Driven Spatio-Temporal Hypergraph Neural Networks for Irregular Longitudinal fMRI Connectome Modeling in Alzheimer's Disease.*
 
-Code + config only; **no preprocessed data** in the repo.
+Code + config only; **no preprocessed data** in the repo. 
 
 ---
 
@@ -12,7 +12,7 @@ Code + config only; **no preprocessed data** in the repo.
 
 - **Data:** `data.py`, `data_oasis.py`, and `data_util.py` — cohort **I/O**, **signal reconstruction / preprocessing** (SDE-based where used), and **multi-visit tensors + labels** for training.
 - **Backbone:** KNN **hypergraph** per time point → **HGNN** message passing; **SDE** models evolution across visits (default: EvolveHGNN + SDE).
-- **Training:** Stratified **5-fold** cross-validation; metrics such as AUC, accuracy, sensitivity, specificity (see logs under `results/`).
+- **Training:** Stratified **5-fold** cross-validation; metrics such as AUC, accuracy, sensitivity, specificity (see logs under `results/` after you run the code).
 
 ---
 
@@ -22,8 +22,8 @@ Code + config only; **no preprocessed data** in the repo.
 |------|------|
 | **EvolveHGNN + SDE** | Main: hypergraph conv + SDE over time (`sgcn_progress_sde_hgnn.py`, `evolveHGNN.py`). |
 | **HGNN + latent SDE** | Static HGNN per visit + sequence SDE (`sgcn_progress_evolve_sde_hgnn.py`, `HGNN_model/`). |
-| **Sparsity variant** | Optional node / hyperedge sparsity (`sgcn_progress_sde_hgnn_sparsity.py`). |
-| **Graph + ODE** | Auxiliary graph-ODE modules (`graphode.py`, `graphode_nopos.py`). |
+| **Sparsity variant** | Subset node / hyperedge sparsity (`sgcn_progress_sde_hgnn_sparsity.py`). |
+| **Graph + ODE** | Graph-ODE modules (`graphode.py`, `graphode_nopos.py`). |
 | **GCN baselines** | Same training script can switch to GCN paths (`sgcn_progress_sde_gcn.py`, `sgcn_progress_v2.py`). |
 
 ---
@@ -78,3 +78,4 @@ Part of the **HGNN convolution** follows **Feng et al., *Hypergraph Neural Netwo
 ## License
 
 See the repository license file if provided.
+
