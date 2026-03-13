@@ -71,11 +71,12 @@ sdehgnn/
 
 ## Acknowledgements
 
-Part of the **HGNN convolution** follows **Feng et al., *Hypergraph Neural Networks* (AAAI 2019)**. **EvolveHGNN** and **SDE** parts are our extensions. Please cite the HGNN paper if you reuse those layers.
+Part of the **HGNN convolution** follows Feng et al., [*Hypergraph Neural Networks* (AAAI 2019)](https://arxiv.org/abs/1809.09401).. **EvolveHGNN** and **SDE** parts are our extensions. Please cite the HGNN paper if you reuse those layers.
 
 ---
 
 ## License
 
 See the repository license file if provided.
+
 
