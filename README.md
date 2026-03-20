@@ -1,6 +1,6 @@
 # SDE-Driven Spatio-Temporal Hypergraph Neural Networks for Irregular Longitudinal fMRI Connectome Modeling in Alzheimer's Disease
 
-**AMIA 2026 (Anonymous Submission)**
+**AMIA 2026**
 
 This repository provides the implementation for the paper *SDE-Driven Spatio-Temporal Hypergraph Neural Networks for Irregular Longitudinal fMRI Connectome Modeling in Alzheimer's Disease.*
 
