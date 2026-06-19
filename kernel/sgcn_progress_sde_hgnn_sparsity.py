@@ -84,7 +84,10 @@ class SGCN_EvolvedHGNN_SDE_Sparsity(torch.nn.Module):
         self.prob = Parameter(torch.zeros((self.rois, self.x_prob_dim)))
         init.kaiming_uniform_(self.prob, a=math.sqrt(5))
 
-        # prob_bias: [num_features, 1]; each hyperedge tied to one center node
+        # Edge (hyperedge) sparsity:
+        # prob_bias: [num_features, 1], projects node features to scalar for hyperedge importance
+        # (GCN uses [num_features*2, 1] because it concats two endpoint features;
+        #  HGNN uses [num_features, 1] because each hyperedge corresponds to one center node)
         self.prob_bias = Parameter(torch.empty((self.prob_dim, 1)))
         init.kaiming_uniform_(self.prob_bias, a=math.sqrt(5))
         
@@ -115,14 +118,24 @@ class SGCN_EvolvedHGNN_SDE_Sparsity(torch.nn.Module):
 
     def cal_probability(self, x, H):
         """
-        Node sparsity: x_feat_prob = x * sigmoid(self.prob).
-        Hyperedge sparsity: per hyperedge (center node i), linear on masked features -> sigmoid.
-
+        Compute node and hyperedge sparsity probabilities.
+        
+        Node sparsity (same as GCN):
+            x_feat_prob = x * sigmoid(self.prob)
+        
+        Hyperedge sparsity (analogous to GCN's edge_prob):
+            GCN: concat two endpoint features -> linear -> sigmoid -> per-edge prob
+            HGNN: each hyperedge e_i corresponds to center node i
+                  -> use node i's masked features -> linear -> sigmoid -> per-hyperedge prob
+        
         Args:
             x: [B*N, D] node features
             H: [B*N, n_edge] incidence matrix
         Returns:
-            x_feat_prob, G_prob, x_prob, edge_prob
+            x_feat_prob: [B*N, D] masked node features
+            G_prob: [B*N, B*N] normalized hypergraph with P_E as hyperedge weights
+            x_prob: [rois, D] raw node probability logits (for loss)
+            edge_prob: [n_edge] hyperedge probabilities (for loss)
         """
         N_flat, D = x.shape
         B = N_flat // self.rois
@@ -143,7 +156,10 @@ class SGCN_EvolvedHGNN_SDE_Sparsity(torch.nn.Module):
         return x_feat_prob, G_prob, x_prob, edge_prob
 
     def loss_probability(self, x, H, hp, eps=1e-6):
-        """L1 + entropy regularization on node and hyperedge probabilities."""
+        """
+        Compute sparsity regularization loss for node and hyperedge probabilities.
+        Same structure as GCN version: L1 + entropy for both node and edge.
+        """
         _, _, x_prob, edge_prob = self.cal_probability(x, H)
         
         # Node sparsity loss
@@ -165,20 +181,53 @@ class SGCN_EvolvedHGNN_SDE_Sparsity(torch.nn.Module):
 
     def build_hypergraph(self, reconstructed_signal):
         """
-        Build hypergraph from reconstructed signal using KNN.
+        Build per-subject hypergraph from reconstructed signal using KNN.
+        Each subject's ROIs form an independent hypergraph (block-diagonal structure).
         Input: reconstructed_signal [B, N, T]
-        Output: x [B*N, T], H [B*N, B*N], G [B*N, B*N]
+        Output: x [B*N, T], H [B*N, B*N] (block-diagonal), G [B*N, B*N] (block-diagonal)
         """
         B, N, T = reconstructed_signal.shape
-        x = reconstructed_signal.reshape((B*N, -1))
-        
-        H = construct_H_with_KNN(x, K_neigs=self.K_neigs, 
-                                 split_diff_scale=False, 
-                                 is_probH=self.is_probH, 
-                                 m_prob=self.m_prob)
-        
+        x = reconstructed_signal.reshape((B * N, -1))
+
+        dis_mat = torch.cdist(reconstructed_signal.float(), reconstructed_signal.float(), p=2)
+
+        K = int(min(max(self.K_neigs if isinstance(self.K_neigs, int) else self.K_neigs[0], 1), N))
+        eps = 1e-12
+
+        # Batched KNN: for each node find K nearest neighbors (smallest distance)
+        # Set diagonal to large value so self isn't selected as neighbor
+        dis_for_knn = dis_mat.clone()
+        diag_mask = torch.eye(N, dtype=torch.bool, device=dis_mat.device).unsqueeze(0).expand(B, -1, -1)
+        dis_for_knn[diag_mask] = float('inf')
+
+        _, idx = torch.topk(dis_for_knn, k=K, dim=2, largest=False, sorted=True)  # [B, N, K]
+
+        # Ensure center node is included
+        arange_n = torch.arange(N, device=dis_mat.device).view(1, N, 1).expand(B, -1, -1)
+        has_center = (idx == arange_n).any(dim=2)  # [B, N]
+        # For nodes without center, replace last neighbor with self
+        self_indices = torch.arange(N, device=dis_mat.device).view(1, N).expand(B, -1)  # [B, N]
+        last_col = idx[:, :, -1]  # [B, N]
+        idx[:, :, -1] = torch.where(has_center, last_col, self_indices)
+
+        # Gather selected distances for weight computation
+        d_selected = dis_mat.gather(2, idx)  # [B, N, K]
+
+        if self.is_probH:
+            avg_dis = dis_mat.mean(dim=2, keepdim=True)  # [B, N, 1]
+            denom = (self.m_prob * avg_dis).clamp_min(eps)
+            weights = torch.exp(-(d_selected ** 2) / (denom ** 2))  # [B, N, K]
+        else:
+            weights = torch.ones_like(d_selected)
+
+        # Build per-subject H matrices [B, N, N] then assemble block-diagonal
+        H_batch = torch.zeros((B, N, N), dtype=x.dtype, device=self.device)
+        H_batch.scatter_(2, idx, weights)
+
+        # Assemble block-diagonal H and G
+        H = torch.block_diag(*[H_batch[i] for i in range(B)])
         G = generate_G_from_H_torch(H, device=self.device)
-        
+
         return x, H, G
 
     def build_batch_num(self, B, N):
